@@ -1,0 +1,6 @@
+{
+  "name": "Aether HUD - Spatial Hand & Voice Interface",
+  "description": "Futuristic spatial computing HUD controlled by real-time webcam hand gestures (MediaPipe) and voice commands (Web Speech API).",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

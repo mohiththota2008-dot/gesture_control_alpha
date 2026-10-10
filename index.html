@@ -1,0 +1,2434 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AETHER HUD - Spatial Hand & Voice Interface</title>
+    <meta name="description" content="Futuristic spatial computing HUD controlled by real-time webcam hand gestures (MediaPipe) and voice commands (Web Speech API)." />
+    <meta property="og:title" content="AETHER HUD - Spatial Hand & Voice Interface" />
+    <meta property="og:description" content="Futuristic spatial computing HUD controlled by real-time webcam hand gestures (MediaPipe) and voice commands (Web Speech API)." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- Google Fonts for Authentic Sci-Fi Aerospace HUD Typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+
+    <!-- Google MediaPipe Hands & Camera Utils CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+      :root {
+        --primary: #00f3ff;
+        --primary-glow: rgba(0, 243, 255, 0.45);
+        --primary-dim: rgba(0, 243, 255, 0.15);
+        --secondary: #ff9d00;
+        --secondary-glow: rgba(255, 157, 0, 0.4);
+        --accent: #b026ff;
+        --accent-glow: rgba(176, 38, 255, 0.4);
+        --bg-space: #050811;
+        --panel-bg: rgba(6, 14, 28, 0.75);
+        --panel-border: rgba(0, 243, 255, 0.28);
+        --panel-border-glow: 0 0 15px rgba(0, 243, 255, 0.2);
+        --text-main: #e2f4ff;
+        --text-dim: #7fa6c2;
+        --success: #00ff88;
+        --danger: #ff3366;
+        --font-display: 'Orbitron', monospace, sans-serif;
+        --font-ui: 'Rajdhani', sans-serif;
+        --font-mono: 'Share Tech Mono', monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        user-select: none;
+      }
+
+      body {
+        background-color: var(--bg-space);
+        color: var(--text-main);
+        font-family: var(--font-ui);
+        height: 100vh;
+        width: 100vw;
+        overflow: hidden;
+        position: relative;
+        cursor: default;
+      }
+
+      /* Futuristic HUD Background Grid & Scanlines */
+      .hud-grid {
+        position: fixed;
+        inset: 0;
+        background-image: 
+          linear-gradient(rgba(0, 243, 255, 0.035) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(0, 243, 255, 0.035) 1px, transparent 1px),
+          radial-gradient(circle at 50% 50%, rgba(0, 243, 255, 0.08) 0%, transparent 65%);
+        background-size: 40px 40px, 40px 40px, 100% 100%;
+        pointer-events: none;
+        z-index: 1;
+      }
+
+      .scanlines {
+        position: fixed;
+        inset: 0;
+        background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%);
+        background-size: 100% 4px;
+        opacity: 0.6;
+        pointer-events: none;
+        z-index: 2;
+      }
+
+      .vignette {
+        position: fixed;
+        inset: 0;
+        box-shadow: inset 0 0 100px rgba(0, 0, 0, 0.8), inset 0 0 40px rgba(0, 243, 255, 0.15);
+        pointer-events: none;
+        z-index: 3;
+      }
+
+      /* Main HUD Layout */
+      #app-container {
+        position: relative;
+        z-index: 10;
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        height: 100vh;
+        padding: 16px 20px;
+        gap: 16px;
+      }
+
+      /* Top Header Bar */
+      header.hud-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 24px;
+        background: var(--panel-bg);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid var(--panel-border);
+        box-shadow: var(--panel-border-glow);
+        border-radius: 4px;
+        position: relative;
+      }
+
+      header.hud-header::before,
+      header.hud-header::after {
+        content: '';
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        border-color: var(--primary);
+        border-style: solid;
+        pointer-events: none;
+      }
+      header.hud-header::before { top: -1px; left: -1px; border-width: 2px 0 0 2px; }
+      header.hud-header::after { bottom: -1px; right: -1px; border-width: 0 2px 2px 0; }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .brand-icon {
+        width: 28px;
+        height: 28px;
+        border: 2px solid var(--primary);
+        position: relative;
+        transform: rotate(45deg);
+        display: grid;
+        place-items: center;
+        box-shadow: 0 0 12px var(--primary-glow);
+        animation: pulse-ring 3s infinite ease-in-out;
+      }
+      .brand-icon-inner {
+        width: 12px;
+        height: 12px;
+        background: var(--primary);
+        box-shadow: 0 0 8px var(--primary);
+      }
+
+      .brand-title {
+        font-family: var(--font-display);
+        font-weight: 900;
+        letter-spacing: 3px;
+        font-size: 1.15rem;
+        color: #fff;
+        text-shadow: 0 0 10px var(--primary-glow);
+      }
+
+      .brand-tag {
+        font-family: var(--font-mono);
+        font-size: 0.72rem;
+        color: var(--primary);
+        letter-spacing: 1.5px;
+        opacity: 0.85;
+      }
+
+      .header-telemetry {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        font-family: var(--font-mono);
+        font-size: 0.82rem;
+      }
+
+      .telemetry-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--text-dim);
+      }
+      .telemetry-val {
+        color: var(--primary);
+        font-weight: bold;
+      }
+
+      /* HUD Main Workspace: Left Controls, Center Target Area, Right Status Panel */
+      .hud-workspace {
+        display: grid;
+        grid-template-columns: 320px 1fr 340px;
+        gap: 18px;
+        min-height: 0;
+        height: 100%;
+      }
+
+      /* Panel Generic Styling */
+      .hud-panel {
+        background: var(--panel-bg);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid var(--panel-border);
+        box-shadow: var(--panel-border-glow);
+        border-radius: 4px;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .hud-panel-title {
+        font-family: var(--font-display);
+        font-size: 0.82rem;
+        font-weight: 700;
+        letter-spacing: 2px;
+        color: var(--primary);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding-bottom: 8px;
+        border-bottom: 1px solid rgba(0, 243, 255, 0.18);
+        text-transform: uppercase;
+      }
+
+      .hud-panel-title-badge {
+        font-family: var(--font-mono);
+        font-size: 0.68rem;
+        color: var(--text-dim);
+        font-weight: normal;
+      }
+
+      /* Left Panel: Camera Stream & Vision Landmarks */
+      .camera-feed-container {
+        position: relative;
+        width: 100%;
+        height: 220px;
+        border-radius: 4px;
+        overflow: hidden;
+        border: 1px solid rgba(0, 243, 255, 0.35);
+        background: #02050b;
+      }
+
+      #webcam-video {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transform: scaleX(-1); /* Mirror camera for intuitive natural interaction */
+        opacity: 0.75;
+      }
+
+      #webcam-canvas {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 5;
+        transform: scaleX(-1); /* Mirror tracking overlay to match video */
+      }
+
+      .cam-hud-overlay {
+        position: absolute;
+        inset: 0;
+        z-index: 6;
+        pointer-events: none;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: 8px;
+        font-family: var(--font-mono);
+        font-size: 0.7rem;
+      }
+
+      .cam-hud-corner {
+        position: absolute;
+        width: 12px;
+        height: 12px;
+        border-color: var(--primary);
+        border-style: solid;
+      }
+      .cam-tl { top: 4px; left: 4px; border-width: 2px 0 0 2px; }
+      .cam-tr { top: 4px; right: 4px; border-width: 2px 2px 0 0; }
+      .cam-bl { bottom: 4px; left: 4px; border-width: 0 0 2px 2px; }
+      .cam-br { bottom: 4px; right: 4px; border-width: 0 2px 2px 0; }
+
+      .gesture-guide {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        background: rgba(0, 15, 30, 0.5);
+        padding: 12px;
+        border-radius: 4px;
+        border-left: 2px solid var(--primary);
+      }
+
+      .gesture-guide-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 0.85rem;
+      }
+      .gesture-key {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--text-dim);
+      }
+      .gesture-action {
+        color: var(--primary);
+        font-family: var(--font-mono);
+        font-size: 0.78rem;
+      }
+
+      /* Center Workspace: Holographic Desktop */
+      .desktop-workspace {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        position: relative;
+        min-height: 0;
+      }
+
+      .desktop-canvas-area {
+        flex: 1;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: auto 1fr;
+        gap: 16px;
+        min-height: 0;
+      }
+
+      /* Central Holographic Zoom Target Card */
+      .hologram-zoom-viewport {
+        grid-column: 1 / 2;
+        grid-row: 1 / 3;
+        background: radial-gradient(circle at center, rgba(0, 243, 255, 0.08) 0%, rgba(2, 8, 18, 0.85) 75%);
+        border: 1px solid var(--panel-border);
+        border-radius: 4px;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        padding: 20px;
+        transition: box-shadow 0.3s;
+      }
+
+      .hologram-zoom-viewport.active-glow {
+        box-shadow: 0 0 35px var(--primary-glow);
+        border-color: var(--primary);
+      }
+
+      .zoom-level-badge {
+        position: absolute;
+        top: 14px;
+        left: 14px;
+        font-family: var(--font-mono);
+        font-size: 0.8rem;
+        color: var(--primary);
+        background: rgba(0, 243, 255, 0.12);
+        border: 1px solid rgba(0, 243, 255, 0.3);
+        padding: 4px 10px;
+        border-radius: 2px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        z-index: 10;
+      }
+
+      .zoom-level-badge span.val {
+        font-weight: bold;
+        color: #fff;
+      }
+
+      /* 3D Interactive Target Structure */
+      #target-element {
+        position: relative;
+        width: 220px;
+        height: 220px;
+        display: grid;
+        place-items: center;
+        transition: transform 0.15s cubic-bezier(0.2, 0, 0, 1);
+        transform-origin: center center;
+        cursor: pointer;
+      }
+
+      .holo-core {
+        position: absolute;
+        width: 100px;
+        height: 100px;
+        border-radius: 50%;
+        background: radial-gradient(circle, #00f3ff 0%, rgba(0, 243, 255, 0.3) 50%, transparent 70%);
+        box-shadow: 0 0 30px #00f3ff, inset 0 0 20px #00f3ff;
+        animation: core-breathe 4s infinite ease-in-out;
+      }
+
+      .holo-ring-1 {
+        position: absolute;
+        width: 160px;
+        height: 160px;
+        border: 2px dashed rgba(0, 243, 255, 0.7);
+        border-radius: 50%;
+        animation: spin-clockwise 14s linear infinite;
+        box-shadow: 0 0 15px rgba(0, 243, 255, 0.3);
+      }
+
+      .holo-ring-2 {
+        position: absolute;
+        width: 210px;
+        height: 210px;
+        border: 2px solid rgba(255, 157, 0, 0.5);
+        border-top-color: transparent;
+        border-bottom-color: transparent;
+        border-radius: 50%;
+        animation: spin-counter 9s linear infinite;
+      }
+
+      .holo-ring-3 {
+        position: absolute;
+        width: 250px;
+        height: 250px;
+        border: 1px dotted rgba(176, 38, 255, 0.6);
+        border-radius: 50%;
+        animation: spin-clockwise 24s linear infinite;
+      }
+
+      .holo-data-orbit {
+        position: absolute;
+        font-family: var(--font-mono);
+        font-size: 0.65rem;
+        color: var(--primary);
+        letter-spacing: 2px;
+        text-shadow: 0 0 8px var(--primary);
+      }
+
+      .holo-target-label {
+        position: absolute;
+        bottom: 16px;
+        text-align: center;
+        font-family: var(--font-display);
+        font-size: 0.75rem;
+        letter-spacing: 2px;
+        color: var(--text-dim);
+      }
+
+      /* Holographic Interactive Buttons */
+      .hologram-controls-card {
+        grid-column: 2 / 3;
+        grid-row: 1 / 2;
+        background: var(--panel-bg);
+        border: 1px solid var(--panel-border);
+        border-radius: 4px;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .holo-btn-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .holo-btn {
+        background: rgba(0, 243, 255, 0.06);
+        border: 1px solid rgba(0, 243, 255, 0.3);
+        color: var(--primary);
+        font-family: var(--font-display);
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 1.5px;
+        padding: 12px 14px;
+        border-radius: 3px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        position: relative;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        text-align: center;
+      }
+
+      .holo-btn:hover,
+      .holo-btn.simulated-hover {
+        background: rgba(0, 243, 255, 0.18);
+        border-color: var(--primary);
+        box-shadow: 0 0 18px var(--primary-glow);
+        color: #fff;
+        transform: translateY(-1px);
+      }
+
+      .holo-btn:active,
+      .holo-btn.simulated-active {
+        transform: scale(0.96);
+        background: rgba(0, 243, 255, 0.35);
+        box-shadow: 0 0 25px var(--primary);
+      }
+
+      .holo-btn.warning {
+        border-color: rgba(255, 157, 0, 0.4);
+        color: var(--secondary);
+      }
+      .holo-btn.warning:hover,
+      .holo-btn.warning.simulated-hover {
+        border-color: var(--secondary);
+        box-shadow: 0 0 18px var(--secondary-glow);
+        background: rgba(255, 157, 0, 0.18);
+      }
+
+      .holo-btn.accent {
+        border-color: rgba(176, 38, 255, 0.4);
+        color: #d880ff;
+      }
+      .holo-btn.accent:hover,
+      .holo-btn.accent.simulated-hover {
+        border-color: var(--accent);
+        box-shadow: 0 0 18px var(--accent-glow);
+        background: rgba(176, 38, 255, 0.18);
+      }
+
+      /* Scrollable Holographic Matrix Stream Area */
+      .scroll-container-card {
+        grid-column: 2 / 3;
+        grid-row: 2 / 3;
+        background: var(--panel-bg);
+        border: 1px solid var(--panel-border);
+        border-radius: 4px;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        min-height: 0;
+      }
+
+      .scroll-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        color: var(--text-dim);
+      }
+
+      #scrollable-feed {
+        flex: 1;
+        overflow-y: auto;
+        background: rgba(2, 6, 14, 0.7);
+        border: 1px solid rgba(0, 243, 255, 0.15);
+        padding: 12px;
+        border-radius: 3px;
+        font-family: var(--font-mono);
+        font-size: 0.78rem;
+        line-height: 1.6;
+        color: #a5d3f2;
+        scroll-behavior: smooth;
+      }
+
+      #scrollable-feed::-webkit-scrollbar {
+        width: 6px;
+      }
+      #scrollable-feed::-webkit-scrollbar-track {
+        background: rgba(0, 243, 255, 0.05);
+      }
+      #scrollable-feed::-webkit-scrollbar-thumb {
+        background: rgba(0, 243, 255, 0.35);
+        border-radius: 3px;
+      }
+      #scrollable-feed::-webkit-scrollbar-thumb:hover {
+        background: var(--primary);
+      }
+
+      .feed-entry {
+        padding: 4px 0;
+        border-bottom: 1px dashed rgba(0, 243, 255, 0.08);
+      }
+      .feed-entry.highlight {
+        color: var(--primary);
+      }
+      .feed-entry.warn {
+        color: var(--secondary);
+      }
+      .feed-entry.success {
+        color: var(--success);
+      }
+
+      /* Right Panel: Live Status & System Telemetry */
+      .status-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      .system-sensor-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .sensor-card {
+        background: rgba(0, 20, 38, 0.45);
+        border: 1px solid rgba(0, 243, 255, 0.2);
+        padding: 10px;
+        border-radius: 3px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .sensor-label {
+        font-family: var(--font-mono);
+        font-size: 0.68rem;
+        color: var(--text-dim);
+      }
+
+      .sensor-status {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-family: var(--font-display);
+        font-size: 0.75rem;
+        font-weight: 700;
+      }
+
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--danger);
+        box-shadow: 0 0 8px var(--danger);
+        transition: all 0.2s ease;
+      }
+      .status-dot.active {
+        background: var(--success);
+        box-shadow: 0 0 8px var(--success);
+        animation: blink 2s infinite;
+      }
+      .status-dot.starting,
+      .status-dot.reconnecting {
+        background: var(--secondary);
+        box-shadow: 0 0 8px var(--secondary);
+        animation: blink 0.8s infinite;
+      }
+      .status-dot.error {
+        background: var(--danger);
+        box-shadow: 0 0 10px var(--danger);
+      }
+      .status-dot.off {
+        background: #475a6c;
+        box-shadow: none;
+        animation: none;
+      }
+
+      /* Live Voice Transcript Banner */
+      .voice-live-banner {
+        font-family: var(--font-mono);
+        font-size: 0.68rem;
+        color: var(--text-dim);
+        background: rgba(0, 243, 255, 0.04);
+        border: 1px dashed rgba(0, 243, 255, 0.2);
+        padding: 5px 8px;
+        border-radius: 2px;
+        margin-top: 6px;
+        word-break: break-word;
+        transition: all 0.2s ease;
+      }
+      .voice-live-banner.hearing {
+        border-color: var(--primary);
+        background: rgba(0, 243, 255, 0.1);
+        box-shadow: 0 0 8px rgba(0, 243, 255, 0.2);
+      }
+      .voice-live-banner.executed {
+        border-color: var(--success);
+        background: rgba(0, 255, 136, 0.1);
+        box-shadow: 0 0 10px rgba(0, 255, 136, 0.25);
+      }
+
+      /* Audio Visualizer Wave */
+      .audio-wave-container {
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        height: 18px;
+        margin-top: 4px;
+      }
+      .wave-bar {
+        flex: 1;
+        background: var(--primary);
+        height: 20%;
+        border-radius: 1px;
+        transition: height 0.1s ease;
+      }
+      .wave-bar.active {
+        animation: wave-bounce 0.8s infinite ease-in-out alternate;
+      }
+      .wave-bar:nth-child(2) { animation-delay: 0.1s; }
+      .wave-bar:nth-child(3) { animation-delay: 0.2s; }
+      .wave-bar:nth-child(4) { animation-delay: 0.3s; }
+      .wave-bar:nth-child(5) { animation-delay: 0.15s; }
+      .wave-bar:nth-child(6) { animation-delay: 0.25s; }
+
+      /* Live Event Activity Log */
+      .activity-log-container {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        background: rgba(1, 7, 16, 0.65);
+        border: 1px solid rgba(0, 243, 255, 0.18);
+        border-radius: 3px;
+        padding: 10px;
+      }
+
+      #activity-log {
+        flex: 1;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-family: var(--font-mono);
+        font-size: 0.74rem;
+        margin-top: 6px;
+      }
+
+      .log-item {
+        padding: 4px 6px;
+        border-radius: 2px;
+        display: flex;
+        gap: 6px;
+        align-items: flex-start;
+        background: rgba(0, 243, 255, 0.04);
+        border-left: 2px solid var(--primary);
+        animation: fade-slide-in 0.2s ease-out;
+      }
+
+      .log-item.voice {
+        border-left-color: var(--secondary);
+        background: rgba(255, 157, 0, 0.05);
+      }
+
+      .log-item.gesture {
+        border-left-color: var(--success);
+        background: rgba(0, 255, 136, 0.05);
+      }
+
+      .log-item.system {
+        border-left-color: #8faec9;
+      }
+
+      .log-time {
+        color: var(--text-dim);
+        font-size: 0.68rem;
+        flex-shrink: 0;
+      }
+
+      .log-text {
+        color: var(--text-main);
+        word-break: break-word;
+      }
+
+      /* Voice Command Reference Cards */
+      .voice-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 4px;
+      }
+
+      .voice-chip {
+        font-family: var(--font-mono);
+        font-size: 0.68rem;
+        padding: 2px 7px;
+        border: 1px solid rgba(255, 157, 0, 0.3);
+        background: rgba(255, 157, 0, 0.08);
+        color: var(--secondary);
+        border-radius: 2px;
+      }
+
+      /* Bottom Status Footer */
+      footer.hud-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 18px;
+        background: var(--panel-bg);
+        border: 1px solid var(--panel-border);
+        border-radius: 4px;
+        font-family: var(--font-mono);
+        font-size: 0.76rem;
+      }
+
+      .footer-controls {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .hud-mini-btn {
+        background: rgba(0, 243, 255, 0.1);
+        border: 1px solid var(--panel-border);
+        color: var(--primary);
+        font-family: var(--font-mono);
+        font-size: 0.72rem;
+        padding: 4px 10px;
+        border-radius: 2px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+
+      .hud-mini-btn:hover {
+        background: var(--primary);
+        color: #000;
+        box-shadow: 0 0 10px var(--primary-glow);
+      }
+
+      /* VIRTUAL CURSOR (Futuristic Targeting Reticle) */
+      #virtual-cursor {
+        position: fixed;
+        width: 44px;
+        height: 44px;
+        pointer-events: none;
+        z-index: 9999;
+        transform: translate(-50%, -50%);
+        display: none;
+        transition: transform 0.05s ease-out;
+      }
+
+      .cursor-reticle {
+        position: relative;
+        width: 100%;
+        height: 100%;
+      }
+
+      .cursor-circle {
+        position: absolute;
+        inset: 4px;
+        border: 2px solid var(--primary);
+        border-radius: 50%;
+        box-shadow: 0 0 10px var(--primary);
+        transition: all 0.15s ease;
+      }
+
+      .cursor-center-dot {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 6px;
+        height: 6px;
+        transform: translate(-50%, -50%);
+        background: #fff;
+        border-radius: 50%;
+        box-shadow: 0 0 6px var(--primary);
+      }
+
+      .cursor-crosshair {
+        position: absolute;
+        background: var(--primary);
+      }
+      .ch-top { top: 0; left: 50%; transform: translateX(-50%); width: 2px; height: 6px; }
+      .ch-bottom { bottom: 0; left: 50%; transform: translateX(-50%); width: 2px; height: 6px; }
+      .ch-left { left: 0; top: 50%; transform: translateY(-50%); width: 6px; height: 2px; }
+      .ch-right { right: 0; top: 50%; transform: translateY(-50%); width: 6px; height: 2px; }
+
+      /* Pinch / Click Progress Ring */
+      #virtual-cursor.pinching .cursor-circle {
+        transform: scale(0.65);
+        border-color: var(--secondary);
+        box-shadow: 0 0 20px var(--secondary);
+      }
+      #virtual-cursor.pinching .cursor-center-dot {
+        background: var(--secondary);
+        box-shadow: 0 0 12px var(--secondary);
+      }
+
+      /* Cursor Click Ripple Effect */
+      .click-ripple {
+        position: fixed;
+        pointer-events: none;
+        border-radius: 50%;
+        border: 2px solid var(--primary);
+        box-shadow: 0 0 20px var(--primary);
+        transform: translate(-50%, -50%);
+        animation: ripple-expand 0.5s ease-out forwards;
+        z-index: 9998;
+      }
+
+      @keyframes ripple-expand {
+        0% { width: 10px; height: 10px; opacity: 1; }
+        100% { width: 90px; height: 90px; opacity: 0; }
+      }
+
+      /* SYSTEM SLEEP OVERLAY */
+      #sleep-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(1, 3, 7, 0.94);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        z-index: 10000;
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        opacity: 0;
+        transition: opacity 0.5s ease;
+      }
+
+      #sleep-overlay.active {
+        display: flex;
+        opacity: 1;
+      }
+
+      .sleep-ring {
+        width: 140px;
+        height: 140px;
+        border: 2px dashed rgba(0, 243, 255, 0.4);
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        animation: spin-clockwise 20s linear infinite;
+      }
+
+      .sleep-title {
+        font-family: var(--font-display);
+        font-size: 1.6rem;
+        letter-spacing: 5px;
+        color: var(--primary);
+        text-shadow: 0 0 20px var(--primary);
+      }
+
+      .sleep-hint {
+        font-family: var(--font-mono);
+        font-size: 0.9rem;
+        color: var(--text-dim);
+      }
+
+      /* ONBOARDING MODAL */
+      #onboarding-modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(3, 7, 16, 0.88);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        z-index: 10001;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+      }
+
+      .onboarding-card {
+        max-width: 560px;
+        width: 100%;
+        background: #060e1d;
+        border: 2px solid var(--primary);
+        box-shadow: 0 0 40px rgba(0, 243, 255, 0.25);
+        padding: 32px;
+        border-radius: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        position: relative;
+      }
+
+      .onboarding-card::before {
+        content: '';
+        position: absolute;
+        top: -6px;
+        left: 20px;
+        right: 20px;
+        height: 2px;
+        background: var(--primary);
+        box-shadow: 0 0 10px var(--primary);
+      }
+
+      .onboarding-title {
+        font-family: var(--font-display);
+        font-size: 1.5rem;
+        font-weight: 900;
+        letter-spacing: 3px;
+        color: #fff;
+        text-shadow: 0 0 15px var(--primary);
+      }
+
+      .onboarding-desc {
+        color: #9ac2de;
+        font-size: 0.95rem;
+        line-height: 1.5;
+      }
+
+      .onboarding-features {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        margin: 6px 0;
+      }
+
+      .onboarding-feat {
+        background: rgba(0, 243, 255, 0.05);
+        border: 1px solid rgba(0, 243, 255, 0.2);
+        padding: 12px;
+        border-radius: 4px;
+        font-size: 0.85rem;
+      }
+
+      .onboarding-feat strong {
+        display: block;
+        color: var(--primary);
+        font-family: var(--font-display);
+        font-size: 0.78rem;
+        margin-bottom: 4px;
+        letter-spacing: 1px;
+      }
+
+      .start-btn {
+        background: linear-gradient(135deg, #00f3ff, #0088ff);
+        border: none;
+        color: #020611;
+        font-family: var(--font-display);
+        font-weight: 900;
+        letter-spacing: 2.5px;
+        font-size: 1rem;
+        padding: 16px 24px;
+        border-radius: 4px;
+        cursor: pointer;
+        box-shadow: 0 0 25px rgba(0, 243, 255, 0.5);
+        transition: all 0.2s ease;
+      }
+
+      .start-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 0 35px rgba(0, 243, 255, 0.8);
+      }
+
+      .fallback-notice {
+        font-family: var(--font-mono);
+        font-size: 0.72rem;
+        color: var(--text-dim);
+        text-align: center;
+      }
+
+      /* Animations */
+      @keyframes core-breathe {
+        0%, 100% { transform: scale(1); opacity: 0.85; }
+        50% { transform: scale(1.18); opacity: 1; }
+      }
+      @keyframes spin-clockwise {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      @keyframes spin-counter {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(-360deg); }
+      }
+      @keyframes pulse-ring {
+        0%, 100% { border-color: var(--primary); }
+        50% { border-color: rgba(0, 243, 255, 0.3); }
+      }
+      @keyframes blink {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.4; }
+      }
+      @keyframes wave-bounce {
+        0% { height: 15%; }
+        100% { height: 95%; }
+      }
+      @keyframes fade-slide-in {
+        from { opacity: 0; transform: translateY(-4px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Background Sci-Fi Ambience -->
+    <div class="hud-grid"></div>
+    <div class="scanlines"></div>
+    <div class="vignette"></div>
+
+    <!-- Virtual Cursor Overlay -->
+    <div id="virtual-cursor">
+      <div class="cursor-reticle">
+        <div class="cursor-circle"></div>
+        <div class="cursor-center-dot"></div>
+        <div class="cursor-crosshair ch-top"></div>
+        <div class="cursor-crosshair ch-bottom"></div>
+        <div class="cursor-crosshair ch-left"></div>
+        <div class="cursor-crosshair ch-right"></div>
+      </div>
+    </div>
+
+    <!-- Onboarding / Permissions Modal -->
+    <div id="onboarding-modal">
+      <div class="onboarding-card">
+        <div class="onboarding-title">AETHER INTERFACE // INITIALIZE</div>
+        <div class="onboarding-desc">
+          Welcome to the neural spatial HUD. Control the holographic desktop interface seamlessly using real-time webcam hand tracking and continuous voice recognition.
+        </div>
+        <div class="onboarding-features">
+          <div class="onboarding-feat">
+            <strong>🖐️ HAND GESTURES</strong>
+            • Point index finger to guide the virtual cursor.<br />
+            • Pinch (thumb + index) to click buttons.<br />
+            • Expand/pinch fingers to zoom holographic core.
+          </div>
+          <div class="onboarding-feat">
+            <strong>🎙️ VOICE COMMANDS</strong>
+            • Say <em>"Click"</em> to trigger active element.<br />
+            • Say <em>"Zoom In"</em> or <em>"Zoom Out"</em>.<br />
+            • Say <em>"Scroll Up"</em> / <em>"Scroll Down"</em>.<br />
+            • Say <em>"System Sleep"</em> to dim screen.
+          </div>
+        </div>
+        <button id="start-tracking-btn" class="start-btn">ENGAGE SPATIAL TRACKING</button>
+        <div class="fallback-notice">
+          Camera and Microphone permissions will be requested. Manual mouse/touch mode is active as a fallback.
+        </div>
+      </div>
+    </div>
+
+    <!-- System Sleep Dimmer Screen -->
+    <div id="sleep-overlay">
+      <div class="sleep-ring">
+        <div class="holo-core" style="width: 50px; height: 50px;"></div>
+      </div>
+      <div class="sleep-title">SYSTEM IN STASIS</div>
+      <div class="sleep-hint">Say "Wake Up" or Click anywhere with Pinch / Mouse to restore interface</div>
+      <button id="wake-btn" class="holo-btn" style="margin-top: 10px; padding: 10px 24px;">RESTORE HUD</button>
+    </div>
+
+    <!-- Main Application UI -->
+    <div id="app-container">
+      <!-- Header -->
+      <header class="hud-header">
+        <div class="brand">
+          <div class="brand-icon">
+            <div class="brand-icon-inner"></div>
+          </div>
+          <div>
+            <div class="brand-title">AETHER // SPATIAL HUD</div>
+            <div class="brand-tag">NEURAL GESTURE & ACOUSTIC CONTROL v4.9</div>
+          </div>
+        </div>
+
+        <div class="header-telemetry">
+          <div class="telemetry-item">
+            <span>FPS:</span>
+            <span id="fps-counter" class="telemetry-val">00</span>
+          </div>
+          <div class="telemetry-item">
+            <span>LATENCY:</span>
+            <span id="latency-counter" class="telemetry-val">12ms</span>
+          </div>
+          <div class="telemetry-item">
+            <span>HANDS:</span>
+            <span id="hand-count" class="telemetry-val">0</span>
+          </div>
+          <div class="telemetry-item">
+            <span>STATUS:</span>
+            <span id="system-status" class="telemetry-val" style="color: var(--success);">ONLINE</span>
+          </div>
+        </div>
+      </header>
+
+      <!-- Main Workspace -->
+      <main class="hud-workspace">
+        <!-- Left Panel: Webcam Tracking & Gesture Guides -->
+        <aside class="hud-panel">
+          <div class="hud-panel-title">
+            <span>OPTICAL SENSOR</span>
+            <span class="hud-panel-title-badge">MEDIAPIPE v0.10</span>
+          </div>
+
+          <div class="camera-feed-container">
+            <video id="webcam-video" playsinline muted></video>
+            <canvas id="webcam-canvas"></canvas>
+            <div class="cam-hud-overlay">
+              <div>CAM: FEED_01 // 30 FPS</div>
+              <div id="tracking-confidence">TRACKING: STANDBY</div>
+              <div class="cam-hud-corner cam-tl"></div>
+              <div class="cam-hud-corner cam-tr"></div>
+              <div class="cam-hud-corner cam-bl"></div>
+              <div class="cam-hud-corner cam-br"></div>
+            </div>
+          </div>
+
+          <div class="gesture-guide">
+            <div class="hud-panel-title" style="padding-bottom: 4px; font-size: 0.72rem;">GESTURE PROTOCOLS</div>
+            <div class="gesture-guide-item">
+              <span class="gesture-key">👉 Point Index (8)</span>
+              <span class="gesture-action">Virtual Cursor</span>
+            </div>
+            <div class="gesture-guide-item">
+              <span class="gesture-key">👌 Thumb-Index Pinch</span>
+              <span class="gesture-action">Click / Select</span>
+            </div>
+            <div class="gesture-guide-item">
+              <span class="gesture-key">👐 Dual Hand Dist</span>
+              <span class="gesture-action">Dynamic Zoom</span>
+            </div>
+            <div class="gesture-guide-item">
+              <span class="gesture-key">🤏 Thumb-Pinky Spread</span>
+              <span class="gesture-action">Single-Hand Zoom</span>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 8px; margin-top: auto;">
+            <button id="toggle-cam-btn" class="holo-btn" style="flex: 1; padding: 8px;">MUTE CAM</button>
+            <button id="toggle-landmarks-btn" class="holo-btn" style="flex: 1; padding: 8px;">SKELETON ON</button>
+          </div>
+        </aside>
+
+        <!-- Center Workspace: Holographic Desktop -->
+        <section class="desktop-workspace">
+          <div class="desktop-canvas-area">
+            <!-- 3D Holographic Zoom Target -->
+            <div class="hologram-zoom-viewport" id="hologram-viewport">
+              <div class="zoom-level-badge">
+                <span>SCALE:</span>
+                <span id="zoom-val-display" class="val">100%</span>
+              </div>
+
+              <div id="target-element">
+                <div class="holo-ring-3"></div>
+                <div class="holo-ring-2"></div>
+                <div class="holo-ring-1"></div>
+                <div class="holo-core"></div>
+                <div class="holo-data-orbit" style="top: 20px;">[QUANTUM RESONATOR]</div>
+                <div class="holo-data-orbit" style="bottom: 20px;">NODE 0x7E3A</div>
+              </div>
+
+              <div class="holo-target-label">
+                INTERACTIVE TARGET CORE // PINCH / GESTURE TO SCALE
+              </div>
+            </div>
+
+            <!-- Holographic Interactive Buttons -->
+            <div class="hologram-controls-card">
+              <div class="hud-panel-title">
+                <span>TACTICAL CONTROLS</span>
+                <span class="hud-panel-title-badge">GESTURE / VOICE ENABLED</span>
+              </div>
+              <div class="holo-btn-grid">
+                <button class="holo-btn" id="btn-scan">INITIATE SCAN</button>
+                <button class="holo-btn accent" id="btn-shield">QUANTUM SHIELD</button>
+                <button class="holo-btn warning" id="btn-overdrive">OVERDRIVE MODE</button>
+                <button class="holo-btn" id="btn-diagnostics">SYSTEM DIAGNOSTIC</button>
+                <button class="holo-btn" id="btn-zoom-in">+ ZOOM IN</button>
+                <button class="holo-btn" id="btn-zoom-out">- ZOOM OUT</button>
+              </div>
+            </div>
+
+            <!-- Scrollable Holographic Matrix Feed -->
+            <div class="scroll-container-card">
+              <div class="scroll-header">
+                <span>HOLOGRAPHIC TELEMETRY STREAM</span>
+                <span id="scroll-pos-indicator">POS: 0%</span>
+              </div>
+              <div id="scrollable-feed">
+                <div class="feed-entry highlight">[SYSTEM] Neural Kernel v4.9.2 Initialized successfully.</div>
+                <div class="feed-entry">[KERNEL] Direct Memory Access established on bus 0x4F.</div>
+                <div class="feed-entry">[OPTICS] MediaPipe Hands model loaded: BlazePalm + HandLandmark.</div>
+                <div class="feed-entry success">[SPEECH] Acoustic parser listening for continuous trigger tokens.</div>
+                <div class="feed-entry">[SENSORS] Biometric landmark pipeline active on indices 0-20.</div>
+                <div class="feed-entry warn">[THERMAL] Quantum Resonator operating at 4.2 Kelvin nominal.</div>
+                <div class="feed-entry">[NETWORK] Mesh frequency 5.8 GHz synchronized with satellite link.</div>
+                <div class="feed-entry">[SPATIAL] Index tip Euclidean interpolation alpha set to 0.42.</div>
+                <div class="feed-entry highlight">[SECURITY] Spatial authorization verified: Level 5 Architect.</div>
+                <div class="feed-entry">[BUFFER] Telemetry buffer cache flush completed: 0 errors.</div>
+                <div class="feed-entry">[STATUS] Voice commands supported: Click, Zoom In, Zoom Out, Scroll Up, Scroll Down, System Sleep.</div>
+                <div class="feed-entry success">[AUDIO] Web Audio synthesized frequency oscillators engaged.</div>
+                <div class="feed-entry">[CALIBRATION] Gesture threshold delta pinch tuned to 0.055 norm-units.</div>
+                <div class="feed-entry warn">[RADAR] Ambient perimeter clear. Spatial gestures responding.</div>
+                <div class="feed-entry">[LOG] System ready for spatial manipulation.</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Right Panel: Real-time Status Dashboard -->
+        <aside class="hud-panel status-panel">
+          <div class="hud-panel-title">
+            <span>SYSTEM DASHBOARD</span>
+            <span class="hud-panel-title-badge">LIVE SENSORS</span>
+          </div>
+
+          <div class="system-sensor-grid">
+            <!-- Camera Status -->
+            <div class="sensor-card">
+              <div class="sensor-label">CAMERA SENSOR</div>
+              <div class="sensor-status">
+                <div id="cam-status-dot" class="status-dot"></div>
+                <span id="cam-status-text">OFFLINE</span>
+              </div>
+            </div>
+
+            <!-- Mic Status -->
+            <div class="sensor-card">
+              <div class="sensor-label">SPEECH SENSOR</div>
+              <div class="sensor-status">
+                <div id="mic-status-dot" class="status-dot off"></div>
+                <span id="mic-status-text" style="color: var(--text-dim);">OFF</span>
+              </div>
+              <div class="audio-wave-container">
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+              </div>
+              <button id="toggle-voice-btn" class="holo-btn" style="width: 100%; margin-top: 8px; padding: 6px 8px; font-size: 0.72rem;">ENABLE VOICE CONTROL</button>
+              <div id="voice-live-banner" class="voice-live-banner">
+                TRANSCRIPT: <span id="voice-live-text" style="color: var(--primary);">OFFLINE</span>
+              </div>
+              <div id="voice-error-hint" style="display: none; font-family: var(--font-mono); font-size: 0.68rem; color: var(--danger); margin-top: 4px; line-height: 1.3;"></div>
+            </div>
+          </div>
+
+          <!-- Active Recognized Voice Commands Reference -->
+          <div>
+            <div class="sensor-label" style="margin-bottom: 4px;">VOICE TRIGGERS</div>
+            <div class="voice-chips">
+              <span class="voice-chip">"Click"</span>
+              <span class="voice-chip">"Zoom In"</span>
+              <span class="voice-chip">"Zoom Out"</span>
+              <span class="voice-chip">"Scroll Up"</span>
+              <span class="voice-chip">"Scroll Down"</span>
+              <span class="voice-chip">"System Sleep"</span>
+              <span class="voice-chip">"Wake Up"</span>
+            </div>
+          </div>
+
+          <!-- Real-Time Activity & Event Stream Log -->
+          <div class="activity-log-container">
+            <div class="sensor-label" style="display: flex; justify-content: space-between;">
+              <span>EVENT STREAM</span>
+              <span id="event-count">0 EVENTS</span>
+            </div>
+            <div id="activity-log"></div>
+          </div>
+        </aside>
+      </main>
+
+      <!-- Bottom HUD Status Footer -->
+      <footer class="hud-footer">
+        <div style="display: flex; gap: 16px; align-items: center;">
+          <span style="color: var(--primary);">MODE: REAL-TIME SPATIAL HUD</span>
+          <span style="color: var(--text-dim);">PINCH DISTANCE: <span id="pinch-dist-val" style="color: #fff;">0.00</span></span>
+          <span style="color: var(--text-dim);">LAST COMMAND: <span id="last-voice-cmd" style="color: var(--secondary);">NONE</span></span>
+        </div>
+        <div class="footer-controls">
+          <button id="footer-voice-btn" class="hud-mini-btn">VOICE: OFF</button>
+          <button id="sfx-toggle-btn" class="hud-mini-btn">AUDIO SFX: ON</button>
+          <button id="sleep-btn" class="hud-mini-btn">SYSTEM SLEEP</button>
+          <button id="sim-trigger-btn" class="hud-mini-btn">SIMULATE PINCH</button>
+        </div>
+      </footer>
+    </div>
+
+    <!-- Application Script Logic -->
+    <script>
+      (function () {
+        'use strict';
+
+        // --- 1. STATE & GLOBAL VARIABLES ---
+        const state = {
+          cameraActive: false,
+          micActive: false,
+          sfxEnabled: true,
+          showLandmarks: true,
+          isSleeping: false,
+          zoomLevel: 1.0,
+          cursor: { x: window.innerWidth / 2, y: window.innerHeight / 2, targetX: window.innerWidth / 2, targetY: window.innerHeight / 2 },
+          isPinching: false,
+          pinchThreshold: 0.055, // normalized coordinate distance
+          lastPinchTime: 0,
+          frameCount: 0,
+          lastFpsUpdate: performance.now(),
+          fps: 0,
+          eventsLogged: 0,
+          hoveredElement: null,
+          prevTwoHandDist: null,
+          prevSingleHandSpan: null,
+        };
+
+        // --- 2. DOM ELEMENT REFS ---
+        const videoEl = document.getElementById('webcam-video');
+        const canvasEl = document.getElementById('webcam-canvas');
+        const canvasCtx = canvasEl.getContext('2d');
+        const virtualCursor = document.getElementById('virtual-cursor');
+        const targetElement = document.getElementById('target-element');
+        const hologramViewport = document.getElementById('hologram-viewport');
+        const zoomValDisplay = document.getElementById('zoom-val-display');
+        const scrollableFeed = document.getElementById('scrollable-feed');
+        const scrollPosIndicator = document.getElementById('scroll-pos-indicator');
+        const activityLog = document.getElementById('activity-log');
+        const eventCountEl = document.getElementById('event-count');
+        const fpsCounter = document.getElementById('fps-counter');
+        const latencyCounter = document.getElementById('latency-counter');
+        const handCountEl = document.getElementById('hand-count');
+        const camStatusDot = document.getElementById('cam-status-dot');
+        const camStatusText = document.getElementById('cam-status-text');
+        const micStatusDot = document.getElementById('mic-status-dot');
+        const micStatusText = document.getElementById('mic-status-text');
+        const trackingConfidence = document.getElementById('tracking-confidence');
+        const pinchDistVal = document.getElementById('pinch-dist-val');
+        const lastVoiceCmd = document.getElementById('last-voice-cmd');
+        const sleepOverlay = document.getElementById('sleep-overlay');
+        const onboardingModal = document.getElementById('onboarding-modal');
+        const startTrackingBtn = document.getElementById('start-tracking-btn');
+        const toggleCamBtn = document.getElementById('toggle-cam-btn');
+        const toggleLandmarksBtn = document.getElementById('toggle-landmarks-btn');
+        const sfxToggleBtn = document.getElementById('sfx-toggle-btn');
+        const sleepBtn = document.getElementById('sleep-btn');
+        const wakeBtn = document.getElementById('wake-btn');
+        const simTriggerBtn = document.getElementById('sim-trigger-btn');
+        const waveBars = document.querySelectorAll('.wave-bar');
+        const toggleVoiceBtn = document.getElementById('toggle-voice-btn');
+        const footerVoiceBtn = document.getElementById('footer-voice-btn');
+        const voiceLiveBanner = document.getElementById('voice-live-banner');
+        const voiceLiveText = document.getElementById('voice-live-text');
+        const voiceErrorHint = document.getElementById('voice-error-hint');
+
+        let handsModel = null;
+        let cameraStream = null;
+        let audioCtx = null;
+
+        // Dedicated Voice Recognition State Machine
+        const voiceState = {
+          status: 'OFF', // 'OFF' | 'STARTING' | 'LISTENING' | 'RECONNECTING' | 'ERROR' | 'BLOCKED' | 'NO MIC' | 'UNSUPPORTED'
+          recognizer: null,
+          isIntentionalStop: true,
+          reconnectAttempts: 0,
+          maxReconnectAttempts: 4,
+          reconnectTimer: null,
+          lastExecutedCommand: '',
+          lastCommandTime: 0,
+          processedFinalIndices: new Set(),
+        };
+
+        // --- 3. WEB AUDIO SYNTHESIZER (Sci-Fi Futuristic Audio Feedback) ---
+        function initAudio() {
+          if (!audioCtx) {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            if (AudioContext) {
+              audioCtx = new AudioContext();
+            }
+          }
+          if (audioCtx && audioCtx.state === 'suspended') {
+            audioCtx.resume();
+          }
+        }
+
+        function playSciFiSound(type) {
+          if (!state.sfxEnabled || !audioCtx) return;
+          try {
+            const now = audioCtx.currentTime;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            if (type === 'click') {
+              // Crisp high-tech digital chirping click
+              osc.type = 'sine';
+              osc.frequency.setValueAtTime(800, now);
+              osc.frequency.exponentialRampToValueAtTime(1600, now + 0.04);
+              osc.frequency.exponentialRampToValueAtTime(400, now + 0.08);
+              gain.gain.setValueAtTime(0.2, now);
+              gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+              osc.start(now);
+              osc.stop(now + 0.08);
+            } else if (type === 'zoom') {
+              // Resonant holographic frequency swell
+              osc.type = 'triangle';
+              osc.frequency.setValueAtTime(440, now);
+              osc.frequency.linearRampToValueAtTime(660, now + 0.12);
+              gain.gain.setValueAtTime(0.12, now);
+              gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+              osc.start(now);
+              osc.stop(now + 0.14);
+            } else if (type === 'voice') {
+              // Dual-tone affirmative acknowledgment chime
+              osc.type = 'sine';
+              osc.frequency.setValueAtTime(587.33, now); // D5
+              osc.frequency.setValueAtTime(880, now + 0.08); // A5
+              gain.gain.setValueAtTime(0.15, now);
+              gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+              osc.start(now);
+              osc.stop(now + 0.2);
+            } else if (type === 'sleep') {
+              // Deep power-down hum
+              osc.type = 'sawtooth';
+              osc.frequency.setValueAtTime(320, now);
+              osc.frequency.exponentialRampToValueAtTime(60, now + 0.4);
+              gain.gain.setValueAtTime(0.2, now);
+              gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+              osc.start(now);
+              osc.stop(now + 0.4);
+            } else if (type === 'wake') {
+              // Uplifting power-up harmonic
+              osc.type = 'sine';
+              osc.frequency.setValueAtTime(150, now);
+              osc.frequency.exponentialRampToValueAtTime(900, now + 0.35);
+              gain.gain.setValueAtTime(0.25, now);
+              gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+              osc.start(now);
+              osc.stop(now + 0.35);
+            }
+          } catch (e) {
+            console.warn('Audio synthesis issue:', e);
+          }
+        }
+
+        // --- 4. TELEMETRY & EVENT LOGGER ---
+        function logEvent(type, text) {
+          state.eventsLogged++;
+          eventCountEl.textContent = `${state.eventsLogged} EVENTS`;
+
+          const item = document.createElement('div');
+          item.className = `log-item ${type}`;
+
+          const time = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+          item.innerHTML = `
+            <span class="log-time">[${time}]</span>
+            <span class="log-text">${text}</span>
+          `;
+
+          activityLog.insertBefore(item, activityLog.firstChild);
+
+          // Keep log to max 40 items for performance
+          if (activityLog.children.length > 40) {
+            activityLog.removeChild(activityLog.lastChild);
+          }
+        }
+
+        // --- 5. RIPPLE & GLOW VISUAL FEEDBACK ---
+        function createRipple(x, y) {
+          const ripple = document.createElement('div');
+          ripple.className = 'click-ripple';
+          ripple.style.left = `${x}px`;
+          ripple.style.top = `${y}px`;
+          document.body.appendChild(ripple);
+          setTimeout(() => ripple.remove(), 550);
+        }
+
+        function triggerElementClickEffect(el) {
+          if (!el) return;
+          el.classList.add('simulated-active');
+          setTimeout(() => el.classList.remove('simulated-active'), 180);
+          playSciFiSound('click');
+        }
+
+        // --- 6. TARGET INTERACTIVE ELEMENT EXECUTION (Virtual Click) ---
+        function executeClickAt(x, y, source = 'GESTURE') {
+          createRipple(x, y);
+
+          // Hide virtual cursor temporarily to hit test underlying DOM
+          virtualCursor.style.display = 'none';
+          const target = document.elementFromPoint(x, y);
+          virtualCursor.style.display = 'block';
+
+          if (target) {
+            const clickable = target.closest('button, .holo-btn, #target-element, #scrollable-feed, input, a');
+            if (clickable) {
+              triggerElementClickEffect(clickable);
+              clickable.click();
+              const label = clickable.innerText.trim().replace(/\n/g, ' ') || clickable.id || 'TARGET';
+              logEvent('gesture', `${source} CLICK triggered on [${label.substring(0, 20)}]`);
+              return;
+            }
+          }
+
+          logEvent('gesture', `${source} CLICK in open space at (${Math.round(x)}, ${Math.round(y)})`);
+        }
+
+        // --- 7. ZOOM CONTROL ---
+        function applyZoom(delta) {
+          const newZoom = Math.min(Math.max(state.zoomLevel + delta, 0.4), 2.8);
+          if (Math.abs(newZoom - state.zoomLevel) > 0.01) {
+            state.zoomLevel = newZoom;
+            targetElement.style.transform = `scale(${state.zoomLevel})`;
+            zoomValDisplay.textContent = `${Math.round(state.zoomLevel * 100)}%`;
+            hologramViewport.classList.add('active-glow');
+            setTimeout(() => hologramViewport.classList.remove('active-glow'), 250);
+            playSciFiSound('zoom');
+          }
+        }
+
+        // --- 8. SCROLL CONTROL ---
+        function scrollFeed(amount) {
+          scrollableFeed.scrollBy({ top: amount, behavior: 'smooth' });
+          setTimeout(() => {
+            const maxScroll = scrollableFeed.scrollHeight - scrollableFeed.clientHeight;
+            const pct = maxScroll > 0 ? Math.round((scrollableFeed.scrollTop / maxScroll) * 100) : 0;
+            scrollPosIndicator.textContent = `POS: ${pct}%`;
+          }, 150);
+        }
+
+        // --- 9. SYSTEM SLEEP TOGGLE ---
+        function toggleSystemSleep(sleepState) {
+          state.isSleeping = typeof sleepState === 'boolean' ? sleepState : !state.isSleeping;
+          if (state.isSleeping) {
+            sleepOverlay.classList.add('active');
+            playSciFiSound('sleep');
+            logEvent('system', 'System entered STASIS mode (Screen Dimmed)');
+          } else {
+            sleepOverlay.classList.remove('active');
+            playSciFiSound('wake');
+            logEvent('system', 'System restored to OPERATIONAL mode');
+          }
+        }
+
+        // --- 10. MEDIAPIPE HANDS INITIALIZATION & WEBCAM FEED ---
+        async function setupHandTracking() {
+          try {
+            trackingConfidence.textContent = 'TRACKING: INITIALIZING...';
+            logEvent('system', 'Loading Google MediaPipe Hands model...');
+
+            // Verify MediaPipe Hands library availability
+            if (typeof window.Hands === 'undefined') {
+              throw new Error('MediaPipe Hands library failed to load from CDN. Checking network.');
+            }
+
+            handsModel = new window.Hands({
+              locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+            });
+
+            handsModel.setOptions({
+              maxNumHands: 2,
+              modelComplexity: 1,
+              minDetectionConfidence: 0.6,
+              minTrackingConfidence: 0.55,
+            });
+
+            handsModel.onResults(onHandResults);
+
+            // Request webcam stream with optimal resolution
+            const stream = await navigator.mediaDevices.getUserMedia({
+              video: {
+                width: { ideal: 640 },
+                height: { ideal: 480 },
+                facingMode: 'user',
+              },
+            });
+
+            cameraStream = stream;
+            videoEl.srcObject = stream;
+            await videoEl.play();
+
+            state.cameraActive = true;
+            camStatusDot.classList.add('active');
+            camStatusText.textContent = 'ACTIVE';
+            trackingConfidence.textContent = 'TRACKING: ACQUIRED';
+            logEvent('system', 'Optical sensor connected: 640x480 video feed.');
+
+            // Start processing frames via requestAnimationFrame
+            processVideoFrame();
+          } catch (err) {
+            console.error('Camera/MediaPipe error:', err);
+            camStatusDot.classList.remove('active');
+            camStatusText.textContent = 'BLOCKED / ERR';
+            trackingConfidence.textContent = 'TRACKING: OFFLINE';
+            logEvent('system', `Webcam initialization failed: ${err.message || 'Permission denied'}`);
+          }
+        }
+
+        let isProcessing = false;
+        async function processVideoFrame() {
+          if (!state.cameraActive || videoEl.paused || videoEl.ended) return;
+
+          if (videoEl.readyState >= 2 && !isProcessing && handsModel) {
+            isProcessing = true;
+            try {
+              await handsModel.send({ image: videoEl });
+            } catch (err) {
+              console.warn('Frame processing exception:', err);
+            }
+            isProcessing = false;
+          }
+
+          // Measure FPS
+          state.frameCount++;
+          const now = performance.now();
+          if (now - state.lastFpsUpdate >= 1000) {
+            state.fps = Math.round((state.frameCount * 1000) / (now - state.lastFpsUpdate));
+            fpsCounter.textContent = `${state.fps < 10 ? '0' : ''}${state.fps}`;
+            state.frameCount = 0;
+            state.lastFpsUpdate = now;
+          }
+
+          requestAnimationFrame(processVideoFrame);
+        }
+
+        // --- 11. GESTURE RECOGNITION & LANDMARK ANALYSIS ---
+        function onHandResults(results) {
+          // Resize overlay canvas to match video feed
+          if (canvasEl.width !== videoEl.videoWidth || canvasEl.height !== videoEl.videoHeight) {
+            canvasEl.width = videoEl.videoWidth || 640;
+            canvasEl.height = videoEl.videoHeight || 480;
+          }
+
+          canvasCtx.save();
+          canvasCtx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+
+          const multiLandmarks = results.multiHandLandmarks;
+          const handCount = multiLandmarks ? multiLandmarks.length : 0;
+          handCountEl.textContent = handCount;
+
+          if (!multiLandmarks || handCount === 0) {
+            trackingConfidence.textContent = 'TRACKING: SCANNING...';
+            canvasCtx.restore();
+            return;
+          }
+
+          trackingConfidence.textContent = `TRACKING: ${handCount} HAND(S) LOCKED`;
+
+          // Draw hand landmarks if enabled
+          if (state.showLandmarks && window.drawConnectors && window.drawLandmarks) {
+            for (const landmarks of multiLandmarks) {
+              window.drawConnectors(canvasCtx, landmarks, window.HAND_CONNECTIONS, {
+                color: '#00f3ff',
+                lineWidth: 2.5,
+              });
+              window.drawLandmarks(canvasCtx, landmarks, {
+                color: '#ff9d00',
+                fillColor: '#00f3ff',
+                lineWidth: 1.5,
+                radius: 3,
+              });
+            }
+          }
+
+          // PRIMARY HAND (for Virtual Cursor & Pinch Click)
+          const primaryHand = multiLandmarks[0];
+          const indexTip = primaryHand[8]; // Landmark 8: Index Finger Tip
+          const thumbTip = primaryHand[4]; // Landmark 4: Thumb Tip
+          const pinkyTip = primaryHand[20]; // Landmark 20: Pinky Tip
+
+          // Coordinate Mapping:
+          // In mirrored video, indexTip.x is mirrored:
+          // x_screen = (1 - indexTip.x) * window.innerWidth
+          // y_screen = indexTip.y * window.innerHeight
+          const mappedX = (1 - indexTip.x) * window.innerWidth;
+          const mappedY = indexTip.y * window.innerHeight;
+
+          state.cursor.targetX = mappedX;
+          state.cursor.targetY = mappedY;
+
+          // Smooth interpolation (Lerp) to eliminate micro-jitter
+          const lerpFactor = 0.45;
+          state.cursor.x += (state.cursor.targetX - state.cursor.x) * lerpFactor;
+          state.cursor.y += (state.cursor.targetY - state.cursor.y) * lerpFactor;
+
+          virtualCursor.style.display = 'block';
+          virtualCursor.style.left = `${state.cursor.x}px`;
+          virtualCursor.style.top = `${state.cursor.y}px`;
+
+          // Hover detection under virtual cursor
+          checkHoverUnderCursor(state.cursor.x, state.cursor.y);
+
+          // PINCH DETECTION (Thumb Tip 4 to Index Tip 8)
+          const pinchDist = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
+          pinchDistVal.textContent = pinchDist.toFixed(3);
+
+          const isCurrentlyPinching = pinchDist < state.pinchThreshold;
+          const now = performance.now();
+
+          if (isCurrentlyPinching) {
+            virtualCursor.classList.add('pinching');
+            if (!state.isPinching && now - state.lastPinchTime > 400) {
+              // Pinch Down Event: Trigger Virtual Click
+              state.isPinching = true;
+              state.lastPinchTime = now;
+              executeClickAt(state.cursor.x, state.cursor.y, 'PINCH GESTURE');
+            }
+          } else {
+            virtualCursor.classList.remove('pinching');
+            if (state.isPinching) {
+              state.isPinching = false;
+            }
+          }
+
+          // ZOOM GESTURES
+          if (handCount >= 2) {
+            // Dual-Hand Zoom: Distance between both index tips
+            const hand1Index = multiLandmarks[0][8];
+            const hand2Index = multiLandmarks[1][8];
+            const twoHandDist = Math.hypot(hand1Index.x - hand2Index.x, hand1Index.y - hand2Index.y);
+
+            if (state.prevTwoHandDist !== null) {
+              const delta = (twoHandDist - state.prevTwoHandDist) * 3.5;
+              if (Math.abs(delta) > 0.02) {
+                applyZoom(delta);
+              }
+            }
+            state.prevTwoHandDist = twoHandDist;
+          } else {
+            state.prevTwoHandDist = null;
+
+            // Single-Hand Zoom: Thumb to Pinky spread expansion
+            const thumbPinkySpan = Math.hypot(thumbTip.x - pinkyTip.x, thumbTip.y - pinkyTip.y);
+            if (state.prevSingleHandSpan !== null && !isCurrentlyPinching) {
+              const spanDelta = (thumbPinkySpan - state.prevSingleHandSpan) * 1.5;
+              if (Math.abs(spanDelta) > 0.035) {
+                applyZoom(spanDelta);
+              }
+            }
+            state.prevSingleHandSpan = thumbPinkySpan;
+          }
+
+          canvasCtx.restore();
+        }
+
+        // --- 12. HOVER EFFECT SIMULATION ---
+        function checkHoverUnderCursor(x, y) {
+          virtualCursor.style.display = 'none';
+          const element = document.elementFromPoint(x, y);
+          virtualCursor.style.display = 'block';
+
+          if (element) {
+            const button = element.closest('button, .holo-btn');
+            if (button) {
+              if (state.hoveredElement !== button) {
+                if (state.hoveredElement) state.hoveredElement.classList.remove('simulated-hover');
+                state.hoveredElement = button;
+                button.classList.add('simulated-hover');
+              }
+              return;
+            }
+          }
+          if (state.hoveredElement) {
+            state.hoveredElement.classList.remove('simulated-hover');
+            state.hoveredElement = null;
+          }
+        }
+
+        // --- 13. NATIVE WEB SPEECH API (Continuous Voice Recognition Engine) ---
+        function updateVoiceHUD(status, errorMessage = '') {
+          voiceState.status = status;
+          if (micStatusText) {
+            micStatusText.textContent = status;
+          }
+
+          if (micStatusDot) {
+            micStatusDot.className = 'status-dot';
+            if (status === 'LISTENING') {
+              micStatusDot.classList.add('active');
+              if (micStatusText) micStatusText.style.color = 'var(--success)';
+            } else if (status === 'STARTING' || status === 'RECONNECTING') {
+              micStatusDot.classList.add('starting');
+              if (micStatusText) micStatusText.style.color = 'var(--secondary)';
+            } else if (status === 'OFF') {
+              micStatusDot.classList.add('off');
+              if (micStatusText) micStatusText.style.color = 'var(--text-dim)';
+            } else {
+              // ERROR, BLOCKED, NO MIC, UNSUPPORTED, TIMEOUT
+              micStatusDot.classList.add('error');
+              if (micStatusText) micStatusText.style.color = 'var(--danger)';
+            }
+          }
+
+          // Audio Visualizer Wave: Animate ONLY when genuine speech engine confirms LISTENING
+          if (waveBars) {
+            waveBars.forEach((bar) => {
+              if (status === 'LISTENING') {
+                bar.classList.add('active');
+              } else {
+                bar.classList.remove('active');
+              }
+            });
+          }
+
+          // Update Dedicated Toggle Buttons
+          if (toggleVoiceBtn) {
+            if (status === 'LISTENING') {
+              toggleVoiceBtn.textContent = 'DISABLE VOICE CONTROL';
+              toggleVoiceBtn.className = 'holo-btn warning';
+            } else if (status === 'STARTING') {
+              toggleVoiceBtn.textContent = 'CONNECTING MIC...';
+              toggleVoiceBtn.className = 'holo-btn simulated-hover';
+            } else if (status === 'RECONNECTING') {
+              toggleVoiceBtn.textContent = 'RECONNECTING...';
+              toggleVoiceBtn.className = 'holo-btn simulated-hover';
+            } else if (status === 'OFF') {
+              toggleVoiceBtn.textContent = 'ENABLE VOICE CONTROL';
+              toggleVoiceBtn.className = 'holo-btn';
+            } else {
+              toggleVoiceBtn.textContent = 'RETRY VOICE CONTROL';
+              toggleVoiceBtn.className = 'holo-btn';
+            }
+          }
+
+          if (footerVoiceBtn) {
+            footerVoiceBtn.textContent = `VOICE: ${status}`;
+            if (status === 'LISTENING') {
+              footerVoiceBtn.style.color = 'var(--success)';
+              footerVoiceBtn.style.borderColor = 'var(--success)';
+            } else if (status === 'STARTING' || status === 'RECONNECTING') {
+              footerVoiceBtn.style.color = 'var(--secondary)';
+              footerVoiceBtn.style.borderColor = 'var(--secondary)';
+            } else if (status === 'OFF') {
+              footerVoiceBtn.style.color = 'var(--primary)';
+              footerVoiceBtn.style.borderColor = 'var(--panel-border)';
+            } else {
+              footerVoiceBtn.style.color = 'var(--danger)';
+              footerVoiceBtn.style.borderColor = 'var(--danger)';
+            }
+          }
+
+          if (voiceErrorHint) {
+            if (errorMessage) {
+              voiceErrorHint.textContent = errorMessage;
+              voiceErrorHint.style.display = 'block';
+            } else {
+              voiceErrorHint.textContent = '';
+              voiceErrorHint.style.display = 'none';
+            }
+          }
+
+          if (status === 'OFF' && voiceLiveText) {
+            voiceLiveText.textContent = 'OFFLINE';
+            if (voiceLiveBanner) voiceLiveBanner.className = 'voice-live-banner';
+          }
+        }
+
+        function updateLiveTranscript(text, isFinal = false, confidence = 0, isExecuted = false) {
+          if (!voiceLiveText || !voiceLiveBanner) return;
+          if (!text) {
+            voiceLiveText.textContent = voiceState.status === 'LISTENING' ? 'AWAITING SPEECH...' : voiceState.status;
+            voiceLiveBanner.className = 'voice-live-banner';
+            return;
+          }
+
+          const confDisplay = confidence ? ` (${Math.round(confidence * 100)}%)` : '';
+          voiceLiveText.textContent = `"${text}"${confDisplay}`;
+
+          if (isExecuted) {
+            voiceLiveBanner.className = 'voice-live-banner executed';
+            setTimeout(() => {
+              if (voiceLiveBanner && voiceLiveBanner.classList.contains('executed')) {
+                voiceLiveBanner.className = 'voice-live-banner';
+              }
+            }, 1400);
+          } else if (isFinal) {
+            voiceLiveBanner.className = 'voice-live-banner hearing';
+          } else {
+            voiceLiveBanner.className = 'voice-live-banner hearing';
+          }
+        }
+
+        async function startVoiceRecognition() {
+          const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+          // 1. Browser Support Detection
+          if (!SpeechRecognition) {
+            updateVoiceHUD('UNSUPPORTED', 'Web Speech API is unsupported in this browser. Use Google Chrome or Microsoft Edge on localhost/HTTPS.');
+            logEvent('voice', 'ERROR: Web Speech API is not supported by this browser engine. Use Chrome or Edge.');
+            return false;
+          }
+
+          // Prevent duplicate start requests
+          if (voiceState.status === 'LISTENING' || voiceState.status === 'STARTING') {
+            return true;
+          }
+
+          clearTimeout(voiceState.reconnectTimer);
+          voiceState.isIntentionalStop = false;
+          voiceState.reconnectAttempts = 0;
+          updateVoiceHUD('STARTING');
+          logEvent('voice', 'Requesting microphone permissions and initializing speech engine...');
+
+          // 2. Microphone Hardware & Permission Check via getUserMedia under user activation
+          try {
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+              const probeStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+              // Permission granted and microphone hardware exists; release probe tracks cleanly
+              probeStream.getTracks().forEach((track) => track.stop());
+            }
+          } catch (err) {
+            console.warn('Microphone permission or hardware verification failed:', err);
+            voiceState.isIntentionalStop = true;
+            if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+              updateVoiceHUD('BLOCKED', 'Microphone access denied. Click the lock/camera icon in your address bar to enable microphone access, then retry.');
+              logEvent('voice', 'ERROR: Microphone permission was denied by the user or browser security policy.');
+            } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+              updateVoiceHUD('NO MIC', 'No microphone hardware found. Please plug in or enable an audio input device.');
+              logEvent('voice', 'ERROR: No microphone audio hardware detected on this machine.');
+            } else {
+              updateVoiceHUD('ERROR', `Microphone check failed: ${err.message || err.name}`);
+              logEvent('voice', `ERROR: Microphone error: ${err.message || err.name}`);
+            }
+            return false;
+          }
+
+          // 3. Clean up any existing recognizer to prevent duplicate instances or stale event listeners
+          if (voiceState.recognizer) {
+            try {
+              voiceState.recognizer.onstart = null;
+              voiceState.recognizer.onresult = null;
+              voiceState.recognizer.onerror = null;
+              voiceState.recognizer.onend = null;
+              voiceState.recognizer.abort();
+            } catch (e) {}
+            voiceState.recognizer = null;
+          }
+
+          // 4. Instantiate fresh SpeechRecognition instance
+          try {
+            const recognizer = new SpeechRecognition();
+            recognizer.continuous = true;
+            recognizer.interimResults = true;
+            recognizer.lang = 'en-US';
+            recognizer.maxAlternatives = 1;
+
+            recognizer.onstart = () => {
+              if (voiceState.isIntentionalStop) {
+                try { recognizer.abort(); } catch (e) {}
+                return;
+              }
+              voiceState.reconnectAttempts = 0;
+              updateVoiceHUD('LISTENING');
+              updateLiveTranscript('', false);
+              logEvent('voice', 'Speech recognition engine ACTIVE and LISTENING for voice commands.');
+            };
+
+            recognizer.onresult = (event) => {
+              if (!event.results || event.results.length === 0) return;
+
+              let latestInterim = '';
+
+              for (let i = event.resultIndex; i < event.results.length; i++) {
+                const result = event.results[i];
+                if (!result || !result[0]) continue;
+
+                const transcriptChunk = result[0].transcript;
+                const confidence = result[0].confidence;
+
+                if (result.isFinal) {
+                  // Only process final results once per index to avoid double execution
+                  if (!voiceState.processedFinalIndices.has(i)) {
+                    voiceState.processedFinalIndices.add(i);
+                    if (voiceState.processedFinalIndices.size > 80) {
+                      voiceState.processedFinalIndices.clear();
+                      voiceState.processedFinalIndices.add(i);
+                    }
+                    handleFinalVoiceCommand(transcriptChunk, confidence);
+                  }
+                } else {
+                  latestInterim = transcriptChunk;
+                }
+              }
+
+              if (latestInterim) {
+                updateLiveTranscript(latestInterim, false);
+              }
+            };
+
+            recognizer.onerror = (event) => {
+              console.warn('SpeechRecognition error event:', event.error, event);
+              const err = event.error;
+
+              if (err === 'not-allowed') {
+                voiceState.isIntentionalStop = true;
+                updateVoiceHUD('BLOCKED', 'Microphone access denied. Allow microphone in browser site settings.');
+                logEvent('voice', 'ERROR: Microphone permission was denied or revoked.');
+              } else if (err === 'audio-capture') {
+                voiceState.isIntentionalStop = true;
+                updateVoiceHUD('NO MIC', 'Microphone capture failed. Verify microphone is plugged in and not in use by another app.');
+                logEvent('voice', 'ERROR: Audio capture failure.');
+              } else if (err === 'network') {
+                updateVoiceHUD('NETWORK ERR', 'Speech service network failure. Web Speech API requires an active internet connection to Google services.');
+                logEvent('voice', 'ERROR: Network error communicating with Speech Recognition service.');
+              } else if (err === 'service-not-allowed') {
+                voiceState.isIntentionalStop = true;
+                updateVoiceHUD('BLOCKED', 'Speech service not allowed by browser security policy.');
+                logEvent('voice', 'ERROR: Speech recognition service disallowed.');
+              } else if (err === 'no-speech') {
+                // Recoverable silence timeout - Chrome cycles audio window automatically
+                // Do not mark as error; onend will smoothly restart if needed
+              } else if (err === 'aborted') {
+                // Aborted by user stop or stream reset
+              } else {
+                logEvent('voice', `Speech sensor notice: ${err}`);
+              }
+            };
+
+            recognizer.onend = () => {
+              // User intentionally stopped: DO NOT restart!
+              if (voiceState.isIntentionalStop) {
+                updateVoiceHUD('OFF');
+                logEvent('voice', 'Voice recognition deactivated by user.');
+                return;
+              }
+
+              // Fatal error: DO NOT restart
+              if (voiceState.status === 'BLOCKED' || voiceState.status === 'NO MIC' || voiceState.status === 'UNSUPPORTED') {
+                return;
+              }
+
+              // System is sleeping: maintain off display until user wakes system
+              if (state.isSleeping) {
+                updateVoiceHUD('OFF');
+                return;
+              }
+
+              // Auto-recover from recoverable interruptions (e.g. Chrome's 60-second silence timeout)
+              if (voiceState.reconnectAttempts < voiceState.maxReconnectAttempts) {
+                voiceState.reconnectAttempts++;
+                updateVoiceHUD('RECONNECTING');
+                logEvent('voice', `Recovering speech stream (Attempt ${voiceState.reconnectAttempts}/${voiceState.maxReconnectAttempts})...`);
+
+                clearTimeout(voiceState.reconnectTimer);
+                voiceState.reconnectTimer = setTimeout(() => {
+                  if (!voiceState.isIntentionalStop && voiceState.recognizer) {
+                    try {
+                      voiceState.recognizer.start();
+                    } catch (e) {
+                      console.warn('Recognition restart exception:', e);
+                    }
+                  }
+                }, 400);
+              } else {
+                updateVoiceHUD('TIMEOUT', 'Speech stream disconnected. Click Enable Voice Control to restart.');
+                logEvent('voice', 'Speech connection timed out after multiple reconnection attempts.');
+              }
+            };
+
+            voiceState.recognizer = recognizer;
+            recognizer.start();
+            return true;
+          } catch (initErr) {
+            console.error('SpeechRecognition.start() error:', initErr);
+            voiceState.isIntentionalStop = true;
+            updateVoiceHUD('ERROR', `Could not start speech recognition: ${initErr.message || initErr}`);
+            logEvent('voice', `ERROR starting speech engine: ${initErr.message || initErr}`);
+            return false;
+          }
+        }
+
+        function stopVoiceRecognition(isUserAction = true) {
+          voiceState.isIntentionalStop = isUserAction;
+          clearTimeout(voiceState.reconnectTimer);
+
+          if (voiceState.recognizer) {
+            try {
+              voiceState.recognizer.abort();
+            } catch (e) {}
+          }
+
+          updateVoiceHUD('OFF');
+          if (isUserAction) {
+            logEvent('voice', 'Voice recognition stopped by user.');
+          }
+        }
+
+        function toggleVoiceRecognition() {
+          if (voiceState.status === 'LISTENING' || voiceState.status === 'STARTING' || voiceState.status === 'RECONNECTING') {
+            stopVoiceRecognition(true);
+          } else {
+            startVoiceRecognition();
+          }
+        }
+
+        // --- 14. VOICE COMMAND PROCESSOR & NORMALIZATION ---
+        function normalizeVoiceText(text) {
+          if (!text) return '';
+          return text
+            .toLowerCase()
+            .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        }
+
+        function handleFinalVoiceCommand(rawTranscript, confidence) {
+          const norm = normalizeVoiceText(rawTranscript);
+          if (!norm) return;
+
+          const now = performance.now();
+          let matchedCommand = null;
+
+          // Connect all voice commands to real functionality according to specification:
+          // 1. "Click"
+          if (
+            norm === 'click' ||
+            norm.endsWith(' click') ||
+            norm.startsWith('click ') ||
+            norm.includes(' click ') ||
+            norm === 'select' ||
+            norm === 'press' ||
+            norm.includes('tap')
+          ) {
+            matchedCommand = 'Click';
+          }
+          // 2. "Zoom in"
+          else if (
+            norm.includes('zoom in') ||
+            norm.includes('scale up') ||
+            norm.includes('enlarge') ||
+            norm === 'zoomin' ||
+            norm === 'zoom'
+          ) {
+            matchedCommand = 'Zoom in';
+          }
+          // 3. "Zoom out"
+          else if (
+            norm.includes('zoom out') ||
+            norm.includes('scale down') ||
+            norm.includes('shrink') ||
+            norm === 'zoomout'
+          ) {
+            matchedCommand = 'Zoom out';
+          }
+          // 4. "Scroll up"
+          else if (
+            norm.includes('scroll up') ||
+            norm.includes('page up') ||
+            norm === 'up'
+          ) {
+            matchedCommand = 'Scroll up';
+          }
+          // 5. "Scroll down"
+          else if (
+            norm.includes('scroll down') ||
+            norm.includes('page down') ||
+            norm === 'down'
+          ) {
+            matchedCommand = 'Scroll down';
+          }
+          // 6. "System sleep"
+          else if (
+            norm.includes('system sleep') ||
+            norm === 'sleep' ||
+            norm.includes('go to sleep') ||
+            norm.includes('stasis')
+          ) {
+            matchedCommand = 'System sleep';
+          }
+          // 7. "Wake up"
+          else if (
+            norm.includes('wake up') ||
+            norm === 'wake' ||
+            norm.includes('restore system') ||
+            norm === 'online'
+          ) {
+            matchedCommand = 'Wake up';
+          }
+
+          const confPct = Math.round((confidence || 0.95) * 100);
+
+          if (!matchedCommand) {
+            updateLiveTranscript(rawTranscript, true, confidence, false);
+            logEvent('voice', `Voice heard: "${rawTranscript}" (${confPct}%) - No matching command.`);
+            return;
+          }
+
+          // Debounce duplicate commands within 850ms to prevent repeated execution of the same utterance
+          if (matchedCommand === voiceState.lastExecutedCommand && (now - voiceState.lastCommandTime) < 850) {
+            console.log('Debounced duplicate voice command execution:', matchedCommand);
+            return;
+          }
+
+          voiceState.lastExecutedCommand = matchedCommand;
+          voiceState.lastCommandTime = now;
+
+          // Update HUD status & trigger audio confirmation
+          if (lastVoiceCmd) {
+            lastVoiceCmd.textContent = `"${matchedCommand}" (${confPct}%)`;
+          }
+          updateLiveTranscript(matchedCommand, true, confidence, true);
+          playSciFiSound('voice');
+
+          // Execute real functionality on the underlying systems
+          switch (matchedCommand) {
+            case 'Click':
+              executeClickAt(state.cursor.x, state.cursor.y, 'VOICE');
+              break;
+
+            case 'Zoom in':
+              applyZoom(+0.25);
+              logEvent('system', 'Voice command applied: ZOOM IN (+0.25)');
+              break;
+
+            case 'Zoom out':
+              applyZoom(-0.25);
+              logEvent('system', 'Voice command applied: ZOOM OUT (-0.25)');
+              break;
+
+            case 'Scroll up':
+              scrollFeed(-120);
+              logEvent('system', 'Voice command applied: SCROLL UP (-120px)');
+              break;
+
+            case 'Scroll down':
+              scrollFeed(+120);
+              logEvent('system', 'Voice command applied: SCROLL DOWN (+120px)');
+              break;
+
+            case 'System sleep':
+              toggleSystemSleep(true);
+              break;
+
+            case 'Wake up':
+              toggleSystemSleep(false);
+              break;
+          }
+        }
+
+        // --- 15. INTERACTIVE BUTTON ATTACHMENTS & ACTIONS ---
+        document.getElementById('btn-scan').addEventListener('click', () => {
+          logEvent('system', 'TACTICAL SCAN initiated. Sensor ping returned zero anomalies.');
+        });
+
+        document.getElementById('btn-shield').addEventListener('click', () => {
+          logEvent('system', 'QUANTUM SHIELD harmonized to 14.8 MHz. Defense at 100%.');
+        });
+
+        document.getElementById('btn-overdrive').addEventListener('click', () => {
+          logEvent('system', 'OVERDRIVE MODE engaged! Auxiliary power diverted to optical bus.');
+        });
+
+        document.getElementById('btn-diagnostics').addEventListener('click', () => {
+          logEvent('system', `DIAGNOSTICS: Latency=${latencyCounter.textContent}, FPS=${state.fps}, SFX=${state.sfxEnabled ? 'ON' : 'OFF'}`);
+        });
+
+        document.getElementById('btn-zoom-in').addEventListener('click', () => {
+          applyZoom(0.2);
+        });
+
+        document.getElementById('btn-zoom-out').addEventListener('click', () => {
+          applyZoom(-0.2);
+        });
+
+        targetElement.addEventListener('click', () => {
+          applyZoom(0.15);
+          logEvent('system', 'Quantum Resonator target tapped. Pulse resonance generated.');
+        });
+
+        // SFX Toggle
+        sfxToggleBtn.addEventListener('click', () => {
+          state.sfxEnabled = !state.sfxEnabled;
+          sfxToggleBtn.textContent = `AUDIO SFX: ${state.sfxEnabled ? 'ON' : 'OFF'}`;
+          logEvent('system', `Synthesized Audio SFX toggled: ${state.sfxEnabled ? 'ENABLED' : 'DISABLED'}`);
+        });
+
+        // Camera Toggle
+        toggleCamBtn.addEventListener('click', () => {
+          if (!cameraStream) return;
+          const track = cameraStream.getVideoTracks()[0];
+          if (track) {
+            track.enabled = !track.enabled;
+            toggleCamBtn.textContent = track.enabled ? 'MUTE CAM' : 'UNMUTE CAM';
+            camStatusText.textContent = track.enabled ? 'ACTIVE' : 'MUTED';
+            camStatusDot.className = `status-dot ${track.enabled ? 'active' : ''}`;
+            logEvent('system', `Optical sensor feed ${track.enabled ? 'resumed' : 'muted'}`);
+          }
+        });
+
+        // Skeleton Landmark Visibility Toggle
+        toggleLandmarksBtn.addEventListener('click', () => {
+          state.showLandmarks = !state.showLandmarks;
+          toggleLandmarksBtn.textContent = state.showLandmarks ? 'SKELETON ON' : 'SKELETON OFF';
+          logEvent('system', `Landmark skeleton rendering: ${state.showLandmarks ? 'VISIBLE' : 'HIDDEN'}`);
+        });
+
+        // Sleep & Wake buttons
+        sleepBtn.addEventListener('click', () => toggleSystemSleep(true));
+        wakeBtn.addEventListener('click', () => toggleSystemSleep(false));
+        sleepOverlay.addEventListener('click', (e) => {
+          if (e.target === sleepOverlay) toggleSystemSleep(false);
+        });
+
+        // Simulation Button (Fallback testing without webcam)
+        simTriggerBtn.addEventListener('click', () => {
+          executeClickAt(window.innerWidth / 2, window.innerHeight / 2, 'SIMULATION');
+        });
+
+        // Dedicated Voice Control Toggles
+        if (toggleVoiceBtn) {
+          toggleVoiceBtn.addEventListener('click', () => {
+            initAudio();
+            toggleVoiceRecognition();
+          });
+        }
+
+        if (footerVoiceBtn) {
+          footerVoiceBtn.addEventListener('click', () => {
+            initAudio();
+            toggleVoiceRecognition();
+          });
+        }
+
+        // Mouse Fallback Cursor Tracking for instant usability
+        window.addEventListener('mousemove', (e) => {
+          if (!state.cameraActive) {
+            virtualCursor.style.display = 'block';
+            virtualCursor.style.left = `${e.clientX}px`;
+            virtualCursor.style.top = `${e.clientY}px`;
+            state.cursor.x = e.clientX;
+            state.cursor.y = e.clientY;
+          }
+        });
+
+        // --- 16. ONBOARDING & INITIALIZATION TRIGGER ---
+        startTrackingBtn.addEventListener('click', async () => {
+          initAudio();
+          playSciFiSound('wake');
+          onboardingModal.style.display = 'none';
+
+          logEvent('system', 'Spatial computing runtime engaged.');
+
+          // Launch Vision sensor (MediaPipe) and Acoustic Speech engine independently
+          setupHandTracking();
+          startVoiceRecognition();
+        });
+
+        // Initial Greeting Log
+        logEvent('system', 'AETHER HUD online. Awaiting sensor activation...');
+      })();
+    </script>
+  </body>
+</html>
